@@ -10,4 +10,9 @@ namespace ServerConnectData
         LogicUserConnected = 1005,
         LogicUserDisconnected = 1006,
     }
+    public static class NetConfig
+    {
+        public const int ServerPort = 13338;
+        public const int BufferSize = 4096;
+    }
 }

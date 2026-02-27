@@ -165,7 +165,7 @@ namespace UnityServer
             }
         }
 
-
+        //类似析构函数
         public void Dispose()
         {
             Dispose(true);
