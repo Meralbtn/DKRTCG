@@ -256,7 +256,7 @@ namespace UnityServer
         //完成写事件,分为部分写和全部写
         private void SendAllTCP()
         {
-            string msg = "这是服务器发送的消息"+DateTime.Now.ToString();
+            string msg = "TCP Server send data is "+DateTime.Now.ToString();
             //转换为字节数组
             using Packet packet = new Packet();
             packet.WriteInt(1);
@@ -270,7 +270,7 @@ namespace UnityServer
 
          private void SendAllUDP()
         {
-            string msg = "这是服务器发送的消息"+DateTime.Now.ToString();
+            string msg = "UDP Server send data is "+DateTime.Now.ToString();
             //转换为字节数组
             using Packet packet = new Packet();
             packet.WriteInt(1);
