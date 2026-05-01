@@ -1,24 +1,24 @@
 ﻿// See https://aka.ms/new-console-template for more information
-using UnityServer;
-Console.WriteLine("Hello, World!");
-string ip = "111.229.131.240";
-ushort port = 8888;
-var key = Console.ReadKey(true);
 
-try 
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+using CardGameServer;
+try
 {
-    if (key.Key == ConsoleKey.C)
-    {
-        CardClient client = new CardClient();
-        client.Start(ip, port);
-    }
-    else if (key.Key == ConsoleKey.S)
-    {
-        CardServer server = new CardServer();
-        server.Start(port);
-    }
+    DatabaseManager.Instance.Init(
+    host: "localhost",
+    database: "cardgame",
+    user: "cardgame",
+    password: "opq2000ll");
+    CardConfigManager.Instance.Load("cards.json");
+    var server = new CardServer();
+    server.Open();
+    Console.WriteLine("服务器已启动，按任意键退出...");
+    Console.ReadKey();
 }
 catch (Exception ex)
 {
-    Console.WriteLine("Error starting client: " + ex.Message);
+    Console.WriteLine($"服务器异常: {ex.Message}");
 }

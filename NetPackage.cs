@@ -1,175 +1,86 @@
 using System;
-using System.Collections.Generic;
-using System.Text;
+using System.IO;
 
-//网络包体类封装，字节流转换
-//int、float、string、bool、byte[]等类型的写入和读取
-
-
-namespace UnityServer
+namespace CardGameServer
 {
-    internal class Packet : IDisposable
+    public class NetPackage : IDisposable
     {
-        private List<byte> buffer = null;
-        private byte[] bufferArray = null;
-        private int readPos = 0;
-        private bool disposed = false;
-        public Packet()
+        private MemoryStream _stream;
+        private BinaryWriter _writer;
+        private BinaryReader _reader;
+
+        public int Length => (int)_stream.Length;
+        public int Position => (int)_stream.Position;
+
+        // ================= 构造 =================
+
+        public NetPackage()
         {
-            buffer = new List<byte>();
-            readPos = 0;
+            _stream = new MemoryStream();
+            _writer = new BinaryWriter(_stream);
         }
 
-        public Packet(byte[] data)
+        public NetPackage(byte[] data)
         {
-            buffer = new List<byte>();
-            readPos = 0;
-            WriteBytes(data);
-            bufferArray = buffer.ToArray();
+            _stream = new MemoryStream(data);
+            _reader = new BinaryReader(_stream);
         }
 
-        public byte[] GetBytesArray()
-        {
-            bufferArray = buffer.ToArray();
-            return bufferArray;
-        }
-       
-        public void WriteBytes(byte[] value)
-        {
-            buffer.AddRange(value);
-
-        }
+        // ================= 写 =================
 
         public void WriteInt(int value)
         {
-            buffer.AddRange(BitConverter.GetBytes(value));
-
+            _writer.Write(value);
         }
 
-        public void WriteFloat(float value)
+        public void WriteBytes(byte[] data)
         {
-            buffer.AddRange(BitConverter.GetBytes(value));
-
+            _writer.Write(data);
         }
 
         public void WriteString(string value)
         {
-            WriteInt(value.Length);
-            buffer.AddRange(Encoding.ASCII.GetBytes(value));
-
+            var bytes = System.Text.Encoding.UTF8.GetBytes(value);
+            WriteInt(bytes.Length);
+            WriteBytes(bytes);
         }
-        public void WriteBoolean(bool value)
+
+        // ================= 读 =================
+
+        public int ReadInt()
         {
-            buffer.AddRange(BitConverter.GetBytes(value));
+            return _reader.ReadInt32();
         }
 
-        public int ReadInt(bool moveReadPos = true)
+        public byte[] ReadBytes(int count)
         {
-            if (buffer.Count > readPos)
-            {
-                int value = BitConverter.ToInt32(bufferArray, readPos);
-                if (moveReadPos)
-                {
-                    readPos += 4;
-                }
-                return value;
-            }
-            else
-            {
-                throw new Exception("Could not read value of type 'int'!");
-            }
+            return _reader.ReadBytes(count);
         }
 
-        public float ReadFloat(bool moveReadPos = true)
+        public string ReadString()
         {
-            if (buffer.Count > readPos)
-            {
-                float value = BitConverter.ToSingle(bufferArray, readPos);
-                if (moveReadPos)
-                {
-                    readPos += 4;
-                }
-                return value;
-            }
-            else
-            {
-                throw new Exception("Could not read value of type 'float'!");
-            }
+            int length = ReadInt();
+            var bytes = ReadBytes(length);
+            return System.Text.Encoding.UTF8.GetString(bytes);
         }
 
-        public string ReadString(bool moveReadPos = true)
+        // ================= 工具 =================
+
+        public byte[] ToArray()
         {
-            int length = ReadInt(true);
-            if (buffer.Count > readPos)
-            {
-                string value = Encoding.ASCII.GetString(bufferArray, readPos, length);
-                if (moveReadPos)
-                {
-                    readPos += length;
-                }
-                return value;
-            }
-            else
-            {
-                throw new Exception("Could not read value of type 'string'!");
-            }
+            return _stream.ToArray();
         }
 
-        public bool ReadBoolean(bool moveReadPos = true)
+        public void ResetPosition()
         {
-            if (buffer.Count > readPos)
-            {
-                bool value = BitConverter.ToBoolean(bufferArray, readPos);
-                if (moveReadPos)
-                {
-                    readPos += 1;
-                }
-                return value;
-            }
-            else
-            {
-                throw new Exception("Could not read value of type 'bool'!");
-            }
+            _stream.Position = 0;
         }
 
-        public byte[] ReadBytes(int length, bool moveReadPos = true)
-        {
-            if (buffer.Count > readPos)
-            {
-                byte[] value = bufferArray.Skip(readPos).Take(length).ToArray();
-                if (moveReadPos)
-                {
-                    readPos += length;
-                }
-                return value;
-            }
-            else
-            {
-                throw new Exception("Could not read value of type 'byte[]'!");
-            }
-        }
-
-//清除数据，释放资源
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!disposed)
-            {
-                if (disposing)
-                {
-                    buffer.Clear();
-                    buffer = null;
-                    bufferArray = null;
-                    readPos = 0;
-                }
-                disposed = true;
-            }
-        }
-
-        //类似析构函数
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            _writer?.Dispose();
+            _reader?.Dispose();
+            _stream?.Dispose();
         }
     }
 }

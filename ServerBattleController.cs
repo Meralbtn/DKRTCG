@@ -1,0 +1,436 @@
+
+using System.Text;
+using System.Text.Json;
+using CardGameApp;
+using Newtonsoft.Json;
+
+namespace CardGameServer
+{
+    //卡牌实体
+    public class CardInstance
+    {
+        private static int _counter = 0;
+        public int _instanceId { get; set; }
+        public int _cardId { get; set; }
+        public int _currentHealth { get; set; }
+        public int _currentAttack { get; set; }
+        public int _attackUsed { get; set; } = 0;
+        public bool _canAttack { get; set; } = false;
+
+        public CardInstance(int cardId, int hp, int atk)
+        {
+            _instanceId = Interlocked.Increment(ref _counter);
+            _cardId = cardId;
+            _currentHealth = hp;
+            _currentAttack = atk;
+        }
+    }
+    public class BattleStartPackage
+    {
+        public string YourRole { get; set; }
+        public string EnemyName { get; set; }
+        public int MyMaxHealth { get; set; }
+        public int EnemyMaxHealth { get; set; }
+        public int MyInitialCost { get; set; }
+        public int EnemyInitialCost { get; set; }
+        public List<HandCardState> MyHand { get; set; }
+        public int EnemyHand { get; set; }
+    }
+
+    public class UseCardPackage
+    {
+        public Guid SessionId { get; set; }
+        public string ActionId { get; set; }
+        public int CardInstanceId { get; set; }
+    }
+
+    public class AttackPackage
+    {
+        public Guid SessionId { get; set; }
+        public string ActionId { get; set; }
+        public int AttackerInstanceId { get; set; } // 我方随从实例 ID
+        public int TargetInstanceId { get; set; } // 目标随从实例 ID，null = 直攻英雄
+    }
+
+    public class EndTurnPackage
+    {
+        public Guid SessionId { get; set; }
+        public string ActionId { get; set; }
+    }
+
+    public class ActionAck
+    {
+        public string ActionId { get; set; } // 对应上行包的 ActionId
+        public ErrorCode ErrorCode { get; set; }
+        public string Reason { get; set; } // 失败原因（调试用）
+    }
+
+    public class BattleState
+    {
+        public int MyHP, EnemyHP;
+        public int MyCost, EnemyCost;
+        public int MyMaxCost, EnemyMaxCost;
+        public bool IsMyTurn;
+        public string GameResult;               // "None" / "Win" / "Lose" / "Draw"
+
+        public List<MiniCardState> MyField;
+        public List<MiniCardState> EnemyField;
+        public List<HandCardState> MyHand;
+        public int EnemyHandCount;
+    }
+
+    public class MiniCardState
+    {
+        public int InstanceId;
+        public int CardId;
+        public int HP, Attack;
+        public int AttackUsed;
+    }
+
+    public class HandCardState
+    {
+        public int InstanceId;
+        public int CardId;
+    }
+    public class HandCard
+    {
+        public int InstanceId;
+        public int CardId;
+    }
+    public class BattleController
+    {
+        public PlayerBaseData Player1;
+        public PlayerBaseData Player2;
+        public PlayerBaseData CurrentTurnPlayer;
+        public bool IsFinished { get; private set; } = false;
+        public int P1Health = 25;
+        public int P2Health = 25;
+        public int P1Cost = 0;
+        public int P2Cost = 0;
+        public class PlayerBattleState
+        {
+            public int Hp = 25;
+            public int MaxCost = 0;
+            public int CurrentCost = 0;
+            public List<int> Deck = new();
+            public List<HandCard> Hand = new();
+            public List<CardInstance> Board = new();
+        }
+
+        public Dictionary<string, PlayerBattleState> States = new();
+
+        public BattleController(PlayerBaseData p1, PlayerBaseData p2)
+        {
+            Player1 = p1;
+            Player2 = p2;
+            if (p1._deck == null || p2._deck == null)
+            {
+                Console.WriteLine("玩家卡组不能为空，无法开始战斗");
+            }
+            States[p1._id] = new PlayerBattleState
+            {
+                Deck = new List<int>(p1._deck)
+            };
+            States[p2._id] = new PlayerBattleState
+            {
+                Deck = new List<int>(p2._deck)
+            };
+            // 洗牌
+            Shuffle(States[p1._id].Deck);
+            Shuffle(States[p2._id].Deck);
+        }
+
+        private void Shuffle(List<int> deck)
+        {
+            Random rng = new Random();
+            int n = deck.Count;
+            while (n > 1)
+            {
+                n--;
+                int k = rng.Next(n + 1);
+                int value = deck[k];
+                deck[k] = deck[n];
+                deck[n] = value;
+            }
+        }
+
+        public void StartBattle()
+        {
+            Console.WriteLine($"战斗开始: {Player1._name} vs {Player2._name}");
+            WhoIsFirst();
+            var firstId = CurrentTurnPlayer._id;
+            var secondId = firstId == Player1._id ? Player2._id : Player1._id;
+
+            States[firstId].MaxCost = 1;
+            States[firstId].CurrentCost = 1;
+            States[secondId].MaxCost = 0;
+            States[secondId].CurrentCost = 0;
+
+            DrawCard(States[Player1._id], 4);
+            DrawCard(States[Player2._id], 5);
+
+            // 给双方分别生成各自视角的初始信息
+            SendStartPackage(Player1);
+            SendStartPackage(Player2);
+        }
+        private void SendStartPackage(PlayerBaseData player)
+        {
+            var myState = States[player._id];
+            var enemyData = player._id == Player1._id ? Player2 : Player1;
+            var enemyState = States[enemyData._id];
+            var isFirst = CurrentTurnPlayer._id == player._id;
+
+            var pkg = new BattleStartPackage
+            {
+                YourRole = isFirst ? "First" : "Last",
+                EnemyName = enemyData._name,
+                MyMaxHealth = myState.Hp,
+                EnemyMaxHealth = enemyState.Hp,
+                MyInitialCost = myState.CurrentCost,
+                EnemyInitialCost = enemyState.CurrentCost,
+                MyHand = myState.Hand.Select(h => new HandCardState
+                {
+                    CardId = h.CardId,
+                    InstanceId = h.InstanceId
+                    
+                }).ToList(),
+                EnemyHand = enemyState.Hand.Count
+            };
+
+            var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(pkg));
+            using var netPkg = new NetPackage();
+            netPkg.WriteInt((int)SessionMessageID.BattleStartResult);
+            netPkg.WriteInt(data.Length);
+            netPkg.WriteBytes(data);
+            CardLogic.instance.SendToPlayer(player, netPkg);
+        }
+
+        //出牌逻辑
+        public void HandleUseCard(PlayerBaseData player, UseCardPackage req)
+        {
+            var myState = States[player._id];
+
+            if (CurrentTurnPlayer._id != player._id)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "还没到你的回合"); return; }
+
+            // CardInstanceId 暂时复用为手牌索引
+            int handIndex = req.CardInstanceId;
+            if (handIndex < 0 || handIndex >= myState.Hand.Count)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "手牌索引无效"); return; }
+
+            int cardId = myState.Hand[handIndex].CardId;
+            if (!CardConfigManager.Instance.TryGet(cardId, out var cfg))
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "卡牌配置不存在"); return; }
+
+            if (cfg.Cost > myState.CurrentCost)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "费用不足"); return; }
+
+            if (myState.Board.Count >= 5)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "场地已满"); return; }
+
+            myState.Hand.RemoveAt(handIndex);
+            myState.CurrentCost -= cfg.Cost;
+            var instance = new CardInstance(cardId, cfg.Hp, cfg.Attack);
+            // 召唤当回合不能攻击
+            instance._canAttack = false;
+            myState.Board.Add(instance);
+
+            Console.WriteLine($"{player._name} 打出卡牌 {cardId}，费用剩余 {myState.CurrentCost}");
+            BroadcastBattleState(req.ActionId, "None", 0);
+        }
+
+        public void HandleAttack(PlayerBaseData player, AttackPackage req)
+        {
+            var myState = States[player._id];
+            var enemyData = player._id == Player1._id ? Player2 : Player1;
+            var enemyState = States[enemyData._id];
+
+            if (CurrentTurnPlayer._id != player._id)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "还没到你的回合"); return; }
+
+            var attacker = myState.Board.FirstOrDefault(c => c._instanceId == req.AttackerInstanceId);
+            if (attacker == null)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "攻击者不存在"); return; }
+
+            if (!attacker._canAttack || attacker._attackUsed > 0)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "该随从本回合无法攻击"); return; }
+
+            int damageDealt = 0;
+            string gameResult = "None";
+
+            if (req.TargetInstanceId == -1)  // 直攻英雄
+            {
+                if (enemyState.Board.Count > 0)
+                { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "敌方有随从，不能直攻英雄"); return; }
+
+                damageDealt = attacker._currentAttack;
+                enemyState.Hp -= damageDealt;
+                attacker._attackUsed++;
+
+                Console.WriteLine($"{player._name} 直攻英雄造成 {damageDealt} 伤害，敌方 HP: {enemyState.Hp}");
+                if (enemyState.Hp <= 0) gameResult = "settled";
+            }
+            else
+            {
+                var target = enemyState.Board.FirstOrDefault(c => c._instanceId == req.TargetInstanceId);
+                if (target == null)
+                { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "目标随从不存在"); return; }
+
+                damageDealt = attacker._currentAttack;
+                target._currentHealth -= damageDealt;
+                attacker._currentHealth -= target._currentAttack;
+                attacker._attackUsed++;
+
+                Console.WriteLine($"{player._name} 随从攻击造成 {damageDealt} 伤害");
+
+                enemyState.Board.RemoveAll(c => c._currentHealth <= 0);
+                myState.Board.RemoveAll(c => c._currentHealth <= 0);
+            }
+
+            BroadcastBattleState(req.ActionId, gameResult, damageDealt);
+        }
+
+        public void HandleEndTurn(PlayerBaseData player, EndTurnPackage req)
+        {
+            if (CurrentTurnPlayer._id != player._id)
+            { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "还没到你的回合"); return; }
+
+            CurrentTurnPlayer = CurrentTurnPlayer._id == Player1._id ? Player2 : Player1;
+            var nextState = States[CurrentTurnPlayer._id];
+
+            nextState.MaxCost = Math.Min(nextState.MaxCost + 1, 10);
+            nextState.CurrentCost = nextState.MaxCost;
+
+            foreach (var card in nextState.Board)
+            {
+                card._attackUsed = 0;
+                card._canAttack = true;
+            }
+
+            DrawCard(nextState, 1);
+            Console.WriteLine($"回合切换，现在轮到 {CurrentTurnPlayer._name}");
+            BroadcastBattleState(req.ActionId, "None", 0);
+        }
+
+        private void BroadcastBattleState(string actionId, string gameResult, int damageDealt)
+        {
+            bool settled = gameResult == "settled";
+
+            SendBattleState(Player1, actionId,
+                myWin: settled && States[Player1._id].Hp > 0,
+                damageDealt);
+
+            SendBattleState(Player2, actionId,
+                myWin: settled && States[Player2._id].Hp > 0,
+                damageDealt);
+
+            if (settled) IsFinished = true;
+        }
+
+        private void SendBattleState(PlayerBaseData player, string actionId, bool myWin, int damageDealt)
+        {
+            var myState = States[player._id];
+            var enemyData = player._id == Player1._id ? Player2 : Player1;
+            var enemyState = States[enemyData._id];
+
+            string result = "None";
+            if (myWin) result = "Win";
+            else if (IsFinished) result = "Lose";
+
+            var state = new BattleState
+            {
+                IsMyTurn = CurrentTurnPlayer._id == player._id,
+                GameResult = result,
+                MyHP = myState.Hp,
+                EnemyHP = enemyState.Hp,
+                MyCost = myState.CurrentCost,
+                MyMaxCost = myState.MaxCost,
+                EnemyCost = enemyState.CurrentCost,
+                EnemyMaxCost = enemyState.MaxCost,
+                EnemyHandCount = enemyState.Hand.Count,
+
+                MyHand = myState.Hand.Select(h => new HandCardState
+                {
+                    CardId = h.CardId,
+                    InstanceId = h.InstanceId
+                    
+                }).ToList(),
+
+                MyField = myState.Board.Select(c => new MiniCardState
+                {
+                    InstanceId = c._instanceId,
+                    CardId = c._cardId,
+                    HP = c._currentHealth,
+                    Attack = c._currentAttack,
+                    AttackUsed = c._attackUsed
+                }).ToList(),
+
+                EnemyField = enemyState.Board.Select(c => new MiniCardState
+                {
+                    InstanceId = c._instanceId,
+                    CardId = c._cardId,
+                    HP = c._currentHealth,
+                    Attack = c._currentAttack,
+                    AttackUsed = 0
+                }).ToList()
+            };
+
+            var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(state));
+            using var netPkg = new NetPackage();
+            netPkg.WriteInt((int)SessionMessageID.BattleStateSync);
+            netPkg.WriteInt(data.Length);
+            netPkg.WriteBytes(data);
+            CardLogic.instance.SendToPlayer(player, netPkg);
+        }
+
+        private void SendAck(PlayerBaseData player, string actionId, ErrorCode code, string reason)
+        {
+            var ack = new ActionAck
+            {
+                ActionId = actionId,
+                ErrorCode = code,
+                Reason = reason
+            };
+            var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(ack));
+            using var netPkg = new NetPackage();
+            netPkg.WriteInt((int)SessionMessageID.BattleActionAck);
+            netPkg.WriteInt(data.Length);
+            netPkg.WriteBytes(data);
+            CardLogic.instance.SendToPlayer(player, netPkg);
+        }
+
+
+
+        public void WhoIsFirst()
+        {
+            //我们用随机数决定先手
+            var rand = new Random();
+            CurrentTurnPlayer = (rand.Next(0, 2) == 0) ? Player1 : Player2;
+        }
+
+        public void DrawCard(PlayerBattleState state, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                if (state.Deck.Count > 0)
+                {
+                    int cardId = state.Deck[0];
+                    state.Deck.RemoveAt(0);
+                    var handCard = new HandCard
+                    {
+                        CardId = cardId,
+                        //定义手牌顺序
+                        InstanceId = state.Hand.Count > 0 ? state.Hand.Count  : 0
+                    };
+                    state.Hand.Add(handCard);
+                }
+                else
+                {
+                    //玩家死亡
+                    state.Hp -= 1;
+                }
+            }
+        }
+
+    }
+}
