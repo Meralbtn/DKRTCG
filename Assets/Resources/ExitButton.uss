@@ -1,0 +1,31 @@
+.exit-btn {
+    width: 120px;
+    height: 36px;
+    background-color: #4A0000;
+    border-color: #7B0000;
+    border-width: 2px;
+    border-radius: 0;          /* 像素风不要圆角 */
+    color: #FF8A80;
+    -unity-font-style: bold;
+    font-size: 13px;
+    letter-spacing: 2px;
+    cursor: link;
+    transition-duration: 0.1s;
+    transition-property: background-color, color, border-color;
+}
+
+.exit-btn:hover {
+    background-color: #7B0000;
+    border-color: #B71C1C;
+    color: #FFFFFF;
+}
+
+.exit-btn:active {
+    background-color: #B71C1C;
+    scale: 0.97 0.97;
+}
+.exit-btn {
+    position: absolute;
+    left: 20px;
+    top: 20px;
+}

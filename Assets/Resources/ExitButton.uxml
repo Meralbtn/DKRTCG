@@ -1,0 +1,4 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" editor-extension-mode="False">
+    <Style src="project://database/Assets/Resources/ExitButton.uss?fileID=7433441132597879392&amp;guid=7cf9a9ac5d378df45a7af0112165b7cc&amp;type=3#ExitButton" />
+    <ui:Button name="exit-btn" text="EXIT" class="exit-btn" style="width: 335px;" />
+</ui:UXML>
