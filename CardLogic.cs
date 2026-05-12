@@ -38,6 +38,7 @@ namespace CardGameServer
 
         BattleStateSync = 2002,
         BattleActionAck = 2003,
+        Surrender = 4004
     }
     public enum ErrorCode
     {
@@ -103,6 +104,12 @@ namespace CardGameServer
         public bool IsUdp;
     }
 
+    public class SurrenderPackage
+    {
+        public Guid SessionId { get; set; }
+        public string ActionId { get; set; }
+    }
+
     public class ForceLeavePackage
     {
         public string Reason { get; set; }
@@ -147,6 +154,16 @@ namespace CardGameServer
         object locker = new();
 
         #region 事件处理
+
+        //退房
+        public void CloseRoomByPlayer(string playerId)
+        {
+            var room = _roomManager.GetRoomByPlayerId(playerId);
+            if (room != null)
+            {
+                _roomManager.LeaveRoom(room._id, room._host);
+            }
+        }
 
         //TCP链接服务器
         public void OnSessionConnected(Session session, byte[] data)
@@ -298,6 +315,8 @@ namespace CardGameServer
                 Console.WriteLine($"离开房间错误: {ex.Message}");
             }
         }
+
+
 
         public void OnJoinRoom(Session session, byte[] data)
         {
@@ -524,7 +543,7 @@ namespace CardGameServer
             SendAuthResult(session, SessionMessageID.LoginResult, result);
         }
 
-        private void SendAuthResult(Session session, SessionMessageID msgId,AuthResultPackage result)
+        private void SendAuthResult(Session session, SessionMessageID msgId, AuthResultPackage result)
         {
             var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(result));
             using var netPkg = new NetPackage();
@@ -553,6 +572,14 @@ namespace CardGameServer
             _packetHandlers[SessionMessageID.EndTurn] = OnEndTurn;
             _packetHandlers[SessionMessageID.Register] = OnRegister;
             _packetHandlers[SessionMessageID.Login] = OnLogin;
+            _packetHandlers[SessionMessageID.Surrender] = (session, data) =>
+            {
+                var battle = GetBattleBySession(session);
+                if (battle == null)
+                { Console.WriteLine("找不到对应战斗"); return; }
+                var player = GetPlayerBySession(session, battle);
+                battle.HandleSurrender(player); 
+            };
         }
 
         public void Work()

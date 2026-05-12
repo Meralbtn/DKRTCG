@@ -27,5 +27,6 @@
   { "Id": 25, "Name": "米米·可可","Type": "Minion", "Hp": 8,  "Attack": 8,  "Cost": 9  },
   { "Id": 26, "Name": "异能术士", "Type": "Minion", "Hp": 9,  "Attack": 9,  "Cost": 10 },
   { "Id": 27, "Name": "救济的圣女","Type": "Minion","Hp": 6,  "Attack": 5,  "Cost": 4  },
-  { "Id": 28, "Name": "成都王",   "Type": "Minion", "Hp": 4,  "Attack": 4,  "Cost": 3  }
+  { "Id": 28, "Name": "成都王",   "Type": "Minion", "Hp": 4,  "Attack": 4,  "Cost": 3  },
+  { "Id": 29, "Name": "抽取", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 1, "EffectType": "DrawCard", "EffectValue": 1}
 ]

@@ -9,7 +9,7 @@ namespace CardGameServer
     //卡牌实体
     public class CardInstance
     {
-        private static int _counter = 0;
+
         public int _instanceId { get; set; }
         public int _cardId { get; set; }
         public int _currentHealth { get; set; }
@@ -17,9 +17,9 @@ namespace CardGameServer
         public int _attackUsed { get; set; } = 0;
         public bool _canAttack { get; set; } = false;
 
-        public CardInstance(int cardId, int hp, int atk)
+        public CardInstance(int instanceId, int cardId, int hp, int atk)
         {
-            _instanceId = Interlocked.Increment(ref _counter);
+            _instanceId = instanceId;
             _cardId = cardId;
             _currentHealth = hp;
             _currentAttack = atk;
@@ -107,6 +107,8 @@ namespace CardGameServer
         public int P2Health = 25;
         public int P1Cost = 0;
         public int P2Cost = 0;
+        private int _handCardCounter = 0;
+        private int _cardInstanceCounter = 0;
         public class PlayerBattleState
         {
             public int Hp = 25;
@@ -192,7 +194,7 @@ namespace CardGameServer
                 {
                     CardId = h.CardId,
                     InstanceId = h.InstanceId
-                    
+
                 }).ToList(),
                 EnemyHand = enemyState.Hand.Count
             };
@@ -213,7 +215,6 @@ namespace CardGameServer
             if (CurrentTurnPlayer._id != player._id)
             { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "还没到你的回合"); return; }
 
-            // CardInstanceId 暂时复用为手牌索引
             int handIndex = req.CardInstanceId;
             if (handIndex < 0 || handIndex >= myState.Hand.Count)
             { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "手牌索引无效"); return; }
@@ -225,18 +226,42 @@ namespace CardGameServer
             if (cfg.Cost > myState.CurrentCost)
             { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "费用不足"); return; }
 
+            myState.Hand.RemoveAt(handIndex);
+            myState.CurrentCost -= cfg.Cost;
+
+            if (cfg.Type == "Spell")
+            {
+                ApplySpellEffect(player, cfg, req);
+                BroadcastBattleState(req.ActionId, "None", 0);
+                return;
+            }
+
             if (myState.Board.Count >= 5)
             { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "场地已满"); return; }
 
-            myState.Hand.RemoveAt(handIndex);
-            myState.CurrentCost -= cfg.Cost;
-            var instance = new CardInstance(cardId, cfg.Hp, cfg.Attack);
-            // 召唤当回合不能攻击
+            var instance = CreateCardInstance(cardId, cfg.Hp, cfg.Attack);
             instance._canAttack = false;
             myState.Board.Add(instance);
 
             Console.WriteLine($"{player._name} 打出卡牌 {cardId}，费用剩余 {myState.CurrentCost}");
             BroadcastBattleState(req.ActionId, "None", 0);
+        }
+        private CardInstance CreateCardInstance(int cardId, int hp, int atk)
+        {
+            return new CardInstance(_cardInstanceCounter++, cardId, hp, atk);
+        }
+
+        private void ApplySpellEffect(PlayerBaseData player, CardConfigData cfg, UseCardPackage req)
+        {
+            var myState = States[player._id];
+
+            switch (cfg.EffectType)
+            {
+                case "DrawCard":
+                    DrawCard(myState, cfg.EffectValue);
+                    Console.WriteLine($"{player._name} 使用「抽取」抽了 {cfg.EffectValue} 张牌");
+                    break;
+            }
         }
 
         public void HandleAttack(PlayerBaseData player, AttackPackage req)
@@ -290,11 +315,18 @@ namespace CardGameServer
             BroadcastBattleState(req.ActionId, gameResult, damageDealt);
         }
 
+        public void HandleSurrender(PlayerBaseData player)
+        {
+            Console.WriteLine($"{player._name} 投降");
+            States[player._id].Hp = 0;
+            BroadcastBattleState("surrender", "settled", 0);
+        }
+
         public void HandleEndTurn(PlayerBaseData player, EndTurnPackage req)
         {
             if (CurrentTurnPlayer._id != player._id)
             { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "还没到你的回合"); return; }
-
+            //检验现在的玩家是谁，切换到另一个玩家
             CurrentTurnPlayer = CurrentTurnPlayer._id == Player1._id ? Player2 : Player1;
             var nextState = States[CurrentTurnPlayer._id];
 
@@ -315,7 +347,13 @@ namespace CardGameServer
         private void BroadcastBattleState(string actionId, string gameResult, int damageDealt)
         {
             bool settled = gameResult == "settled";
-
+            if (settled) IsFinished = true;
+            Console.WriteLine($"===== BroadcastBattleState =====");
+            Console.WriteLine($"ActionId: {actionId} | GameResult: {gameResult} | DamageDealt: {damageDealt} | Settled: {settled}");
+            Console.WriteLine($"[{Player1._name}] HP: {States[Player1._id].Hp} | Cost: {States[Player1._id].CurrentCost}/{States[Player1._id].MaxCost} | Hand: {States[Player1._id].Hand.Count} | Board: {States[Player1._id].Board.Count}");
+            Console.WriteLine($"[{Player2._name}] HP: {States[Player2._id].Hp} | Cost: {States[Player2._id].CurrentCost}/{States[Player2._id].MaxCost} | Hand: {States[Player2._id].Hand.Count} | Board: {States[Player2._id].Board.Count}");
+            Console.WriteLine($"CurrentTurn: {CurrentTurnPlayer._name}");
+            Console.WriteLine($"================================");
             SendBattleState(Player1, actionId,
                 myWin: settled && States[Player1._id].Hp > 0,
                 damageDealt);
@@ -323,8 +361,7 @@ namespace CardGameServer
             SendBattleState(Player2, actionId,
                 myWin: settled && States[Player2._id].Hp > 0,
                 damageDealt);
-
-            if (settled) IsFinished = true;
+            if (settled) CardLogic.instance.CloseRoomByPlayer(Player1._id);
         }
 
         private void SendBattleState(PlayerBaseData player, string actionId, bool myWin, int damageDealt)
@@ -353,7 +390,7 @@ namespace CardGameServer
                 {
                     CardId = h.CardId,
                     InstanceId = h.InstanceId
-                    
+
                 }).ToList(),
 
                 MyField = myState.Board.Select(c => new MiniCardState
@@ -399,8 +436,6 @@ namespace CardGameServer
             CardLogic.instance.SendToPlayer(player, netPkg);
         }
 
-
-
         public void WhoIsFirst()
         {
             //我们用随机数决定先手
@@ -414,20 +449,27 @@ namespace CardGameServer
             {
                 if (state.Deck.Count > 0)
                 {
+                    if (state.Hand.Count >= 7)
+                    {
+                        state.Deck.RemoveAt(0);
+                        Console.WriteLine("手牌已满7张,爆牌丢弃");
+                        continue;
+                    }
+
                     int cardId = state.Deck[0];
                     state.Deck.RemoveAt(0);
                     var handCard = new HandCard
                     {
                         CardId = cardId,
-                        //定义手牌顺序
-                        InstanceId = state.Hand.Count > 0 ? state.Hand.Count  : 0
+                        InstanceId = _handCardCounter++  // 全局递增，永不重复
                     };
                     state.Hand.Add(handCard);
                 }
                 else
                 {
-                    //玩家死亡
-                    state.Hp -= 1;
+                    state.Hp = 0;
+                    BroadcastBattleState("draw_card", "settled", 0);
+                    break;
                 }
             }
         }

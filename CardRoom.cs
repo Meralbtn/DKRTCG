@@ -155,6 +155,12 @@ namespace CardGameApp
             Console.WriteLine($"房间 {_name} 已关闭");
         }
 
+        public void CloseRoom(int roomId)
+        {
+            _players.Clear();
+            _status = RoomStatus.Closed;
+            Console.WriteLine($"房间 {_name} 已关闭");
+        }
         public RoomInfo ToInfo()
         {
             RoomInfo info = new RoomInfo();
@@ -197,6 +203,26 @@ namespace CardGameApp
             }
         }
 
+        public CardRoom GetRoomByPlayerId(string playerId)
+        {
+            foreach (var room in _rooms.Values)
+            {
+                if (room._players.Any(p => p._id == playerId))
+                    return room;
+            }
+            return null;
+        }
+
+        public CardRoom CloseRoom(int roomId)
+        {
+            if (_rooms.TryGetValue(roomId, out var room))
+            {
+                room.CloseRoom(roomId);
+                _rooms.Remove(roomId);
+                return room;
+            }
+            return null;
+        }
         public CardRoom GetRoomById(int roomId)
         {
             foreach (var room in _rooms.Values)

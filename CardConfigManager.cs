@@ -9,7 +9,8 @@ public class CardConfigData
     public int Hp { get; set; }
     public int Attack { get; set; }
     public int Cost { get; set; }
-    public string Effect { get; set; }
+    public string EffectType;
+    public int EffectValue;    
     public string Desc { get; set; }
 }
 //读取卡牌数据
