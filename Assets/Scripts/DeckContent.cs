@@ -19,7 +19,9 @@ public class DeckListUI  : MonoBehaviour
 
     public void OnExitButtonClick()
     {
+        //需要优化
         SceneManager.LoadScene("MainMenu");
+        DeckEditManager.Instance.OnExit();
     } 
     // 刷新卡组列表
     public void RefreshDeckList()
@@ -67,6 +69,7 @@ public class DeckListUI  : MonoBehaviour
         // 创建新卡组并进入编辑场景
         PlayerManager.Instance().CreateNewDeck(deckName);
         _createPanel.SetActive(false);
+        DeckEditManager.Instance.OnExit();
         SceneManager.LoadScene("Deck");
     }
 

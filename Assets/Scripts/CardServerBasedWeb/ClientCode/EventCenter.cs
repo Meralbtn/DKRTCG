@@ -14,6 +14,8 @@ public static class UIEvent
     public const string ON_LOGIN_FAILED = "ON_LOGIN_FAILED";
     public const string ON_REGISTER_SUCCESS = "ON_REGISTER_SUCCESS";
     public const string ON_REGISTER_FAILED = "ON_REGISTER_FAILED";
+    public const string ON_BATTLE_WIN = "ON_BATTLE_WIN";
+    public const string ON_BATTLE_LOSE = "ON_BATTLE_LOSE";
 }
 public static class EventCenter
 {

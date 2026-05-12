@@ -41,7 +41,8 @@ namespace CardGameClient
         ForceLeaveRoom = 1007,
         BattleStartResult = 2001,
         BattleStateSync = 2002,
-        BattleActionAck = 2003
+        BattleActionAck = 2003,
+        Surrender = 4004
     }
 
     public class AuthPackage
@@ -97,7 +98,7 @@ namespace CardGameClient
         public int MyCost, EnemyCost;
         public int MyMaxCost, EnemyMaxCost;
         public bool IsMyTurn;
-        public string GameResult;               
+        public string GameResult;
 
         public List<MiniCardState> MyField;
         public List<MiniCardState> EnemyField;
@@ -117,6 +118,12 @@ namespace CardGameClient
     {
         public int InstanceId;
         public int CardId;
+    }
+    
+    public class SurrenderPackage
+    {
+        public Guid SessionId { get; set; }
+        public string ActionId { get; set; }
     }
 
     public class BattleStartPackage
@@ -189,8 +196,9 @@ namespace CardGameClient
 
         private bool _isQuerying = false;
         public BattleStartPackage _pendingBattleInitInfo;
+        public Task _connectTask;
 
-        
+
         #region 创建房间事件
         //弃用
         public Action _onRoomCreateOrJoin;
@@ -207,7 +215,7 @@ namespace CardGameClient
             //不占用端口
             _udpClient = new UdpClient(0);
             _udpClient.Connect(_ip, _port);
-            Connect();
+            _connectTask = Connect();
             Debug.Log("CardClient 初始化");
         }
         public async Task Connect()
@@ -217,7 +225,6 @@ namespace CardGameClient
             _stream = _tcpClient.GetStream();
 
             Debug.Log("连接服务器成功");
-
 
             await SendHello();
             _ = ReceiveLoop();
@@ -352,14 +359,25 @@ namespace CardGameClient
             byte[] bytes = md5.ComputeHash(Encoding.UTF8.GetBytes(input));
             return BitConverter.ToString(bytes).Replace("-", "").ToLower();
         }
+        // 本次登录的 email 和 hash，供登录成功后持久化使用
+        private string _pendingEmail;
+        private string _pendingHash;
+
         //登录
         public async Task SendLogin(string email, string password)
         {
-            var pkg = new AuthPackage
-            {
-                Email = email,
-                PasswordHash = GetMD5(password)
-            };
+            _pendingEmail = email;
+            _pendingHash  = GetMD5(password);
+            var pkg = new AuthPackage { Email = email, PasswordHash = _pendingHash };
+            await SendTcpMessage(SessionMessageID.Login, pkg);
+        }
+
+        // 发布版持久登录：直接使用已保存的哈希，不重复哈希
+        public async Task SendLoginWithHash(string email, string hash)
+        {
+            _pendingEmail = email;
+            _pendingHash  = hash;
+            var pkg = new AuthPackage { Email = email, PasswordHash = hash };
             await SendTcpMessage(SessionMessageID.Login, pkg);
         }
         //注册
@@ -388,6 +406,14 @@ namespace CardGameClient
                     Debug.Log($"登录成功，UserId: {result.UserId}");
                     Debug.Log($"当前玩家名称: {PlayerManager.Instance().PlayerName}");
                     PlayerManager.Instance().SetPlayerName(result.UserName);
+                    PlayerManager.Instance().SetLoginState();
+                    // 持久化登录凭证（发布版自动登录使用）
+                    if (!string.IsNullOrEmpty(_pendingEmail) && !string.IsNullOrEmpty(_pendingHash))
+                    {
+                        PlayerPrefs.SetString("AutoLogin_Email", _pendingEmail);
+                        PlayerPrefs.SetString("AutoLogin_Hash",  _pendingHash);
+                        PlayerPrefs.Save();
+                    }
                     OnLoginSuccess?.Invoke(result);
                     EventCenter.Broadcast(UIEvent.ON_LOGIN_SUCCESS, result);
                 }
@@ -436,6 +462,22 @@ namespace CardGameClient
             Debug.Log($"SessionID: {pkg._sessionID}");
             Debug.Log($"Name: {pkg._playerName}");
             Debug.Log($"Tips: {pkg._tips}");
+        }
+
+        //投降逻辑
+        public async Task SendSurrender()
+        {
+            var pkg = new SurrenderPackage
+            {
+                SessionId = _uuid,
+                ActionId = Guid.NewGuid().ToString()
+            };
+            var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(pkg));
+            using var netPkg = new NetPackage();
+            netPkg.WriteInt((int)SessionMessageID.Surrender);
+            netPkg.WriteInt(data.Length);
+            netPkg.WriteBytes(data);
+            await SendTcpMessage(SessionMessageID.Surrender, pkg);
         }
 
         //利用UDP发送获取房间列表请求

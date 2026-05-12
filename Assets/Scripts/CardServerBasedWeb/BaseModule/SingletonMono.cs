@@ -29,12 +29,26 @@ namespace SingletonMonoModule
             if (_instance == null)
             {
                 _instance = this as T;
-                DontDestroyOnLoad(gameObject); 
+                DontDestroyOnLoad(gameObject);
             }
             else if (_instance != this)
             {
-                Destroy(gameObject); 
+                Destroy(gameObject);
             }
         }
+        private void OnDestroy()
+        {
+            // 销毁时清空静态引用
+            if (_instance == this)
+                _instance = null;
+        }
+
+        // 主动销毁的入口
+        public static void DestroySelf()
+        {
+            if (_instance != null)
+                Destroy(_instance.gameObject);
+        }
+
     }
 }

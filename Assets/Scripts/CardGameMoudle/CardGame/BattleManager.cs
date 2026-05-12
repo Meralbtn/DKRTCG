@@ -8,6 +8,7 @@ using UnityEngine.UI;
 using TMPro;
 using System.Data;
 using CardGameClient;
+using UnityEngine.SceneManagement;
 
 namespace CardGame
 {
@@ -77,11 +78,6 @@ namespace CardGame
             CardClient.Instance.OnActionAckReceived += OnActionAck;
         }
 
-        private void Update()
-        {
-
-
-        }
         //确保当场景销毁时取消事件订阅，避免潜在的内存泄漏或空引用错误
         private void OnDestroy()
         {
@@ -90,10 +86,10 @@ namespace CardGame
             CardClient.Instance.OnActionAckReceived -= OnActionAck;
         }
 
+
         //开始游戏，加载双方玩家的数据,加载UI
         //卡组洗牌，抽牌
         //回合结束,游戏阶段
-
         public void GameStart(BattleStartPackage initInfo)
         {
             //读取双方数据
@@ -114,10 +110,19 @@ namespace CardGame
 
             InitHandsFromServer(initInfo.MyHand, initInfo.EnemyHand);
             _gameState = _isMyTurn ? GameState.PlayerTurn : GameState.EnemyTurn;
-            OnStateChange();
             UpdateBaseUI();
+            // 延迟一帧广播，确保所有监听者都已注册
+            StartCoroutine(BroadcastInitialState());
         }
-        //阶段切换
+
+
+
+        private IEnumerator BroadcastInitialState()
+        {
+            yield return null;  // 等一帧
+            ChangeBattleState?.Invoke(_gameState.ToString());
+            OnStateChange();
+        }
 
 
         //先后手判定
@@ -151,7 +156,7 @@ namespace CardGame
             _playerDrawCards.Clear();
             _enemyDrawCards.Clear();
 
-           _playerHands.GetComponent<PlayerHandUI>().SyncFromServer(myHand);
+            _playerHands.GetComponent<PlayerHandUI>().SyncFromServer(myHand);
             _enemyHands.GetComponent<PlayerHandUI>().SyncEnemyFromServer(enemyHandCount);
         }
 
@@ -188,7 +193,6 @@ namespace CardGame
             _enemyCostPoint = state.EnemyMaxCost;
             _isMyTurn = state.IsMyTurn;
             _gameState = state.IsMyTurn ? GameState.PlayerTurn : GameState.EnemyTurn;
-
             SyncHand(state.MyHand, state.EnemyHandCount);
             SyncField(_playerCardPlace, state.MyField);
             SyncField(_enemyCardPlace, state.EnemyField);
@@ -212,16 +216,30 @@ namespace CardGame
         private void SyncField(MiniCardGridManager grid, List<MiniCardState> serverCards)
         {
             if (serverCards == null) return;
-            grid.SyncFromServer(serverCards);
+            bool isEnemy = grid == _enemyCardPlace;
+            grid.SyncFromServer(serverCards, isEnemy);
         }
 
 
         // WinCheck 改为接收服务器结果，不自己判断
         private void WinCheck(string result)
         {
-            if (result == "Win") Debug.Log("you win");
-            if (result == "Lose") Debug.Log("you lose");
-            // TODO: 显示结算面板
+            if (result == "Win")
+            {
+                EventCenter.Broadcast(UIEvent.ON_BATTLE_WIN);
+                StartCoroutine(ReturnToMainMenu());
+            }
+            if (result == "Lose")
+            {
+                EventCenter.Broadcast(UIEvent.ON_BATTLE_LOSE);
+                StartCoroutine(ReturnToMainMenu());
+            }
+        }
+
+        private IEnumerator ReturnToMainMenu()
+        {
+            yield return new WaitForSeconds(5f);
+            SceneManager.LoadScene("MainMenu");
         }
 
         private void OnActionAck(ActionAck ack)
@@ -242,9 +260,6 @@ namespace CardGame
         }
 
 
-
-
-
         #region UI更新
         private void UpdateBaseUI()
         {
@@ -252,7 +267,18 @@ namespace CardGame
             _EnemyHealthUI.SetHP(_enemyHealthPoint, _enemyMaxHealthPoint);
             _PlayerCostUI.SetHP(_playerTrueCostPoint, _playerCostPoint);
             _EnemyCostUI.SetHP(_enemyTrueCostPoint, _enemyCostPoint);
+            if (_isMyTurn)
+                _playerHands.GetComponent<PlayerHandUI>().RefreshOutlineByAffordability(_playerTrueCostPoint);
+            else
+                _playerHands.GetComponent<PlayerHandUI>().RefreshOutlineByAffordability(-1);
+            RefreshMinionBorders();
             OnStateChange();
+        }
+
+        private void RefreshMinionBorders()
+        {
+            foreach (var inst in _playerCardPlace.GetActiveCards())
+                inst.RefreshAttackVisual(inst.GetAttackUsed());
         }
 
         #endregion

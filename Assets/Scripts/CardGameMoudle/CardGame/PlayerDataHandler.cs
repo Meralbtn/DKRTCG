@@ -1,6 +1,6 @@
 ﻿using System;
 using UnityEngine;
-using Unity.UI;
+using UnityEngine.UI;
 using TMPro;
 namespace CardGame
 {

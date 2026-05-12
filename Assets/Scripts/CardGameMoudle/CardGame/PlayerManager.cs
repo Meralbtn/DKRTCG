@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Newtonsoft.Json;
 using CardGameApp;
-using Unity.VisualScripting;
+using System.Threading.Tasks;
 namespace CardGame
 {
     public enum PlayerState
@@ -17,7 +17,7 @@ namespace CardGame
     public class PlayerManager
     {
         private PlayerBaseData _playerData = new PlayerBaseData();
-
+        private bool _isLogin = false;
         //房间
         private CardRoom _cardRoom;
         public List<CardRoomInfo> _roomList = new List<CardRoomInfo>();
@@ -28,8 +28,7 @@ namespace CardGame
         private Deck _tempDeck = new Deck();
         private Deck _battleDeck = new Deck();
         private static PlayerManager _manager;
-        //debug
-        public Deck _enemyDeck = new Deck();
+
         public List<Deck> _saveDecks = new List<Deck>();
         public Deck _aiEnemyDeck = new Deck();
         private PlayerState _playerState = PlayerState.Wait;
@@ -53,69 +52,131 @@ namespace CardGame
             return _manager;
         }
 
-        //从文件区域读取卡牌信息
-
-        private TextAsset GetCSVFile(string path)
+        public bool IsLogin()
         {
-            TextAsset dataAsset = Resources.Load<TextAsset>("CardData/卡牌信息");
-            return dataAsset;
+            return _isLogin;
         }
 
-        public Deck GetEnemyDeck()
-        {
-            return _enemyDeck;
-        }
 
         private void InitialSystemCard()
         {
             TextAsset csvFile = Resources.Load<TextAsset>("CardData/卡牌信息");
-            if (csvFile == null)
-            {
-                Debug.Log("Load System Card Error");
-            }
+            if (csvFile == null) { Debug.Log("Load System Card Error"); return; }
+
             string[] lines = csvFile.text.Split('\n');
             for (int i = 1; i < lines.Length; i++)
             {
                 if (string.IsNullOrWhiteSpace(lines[i])) continue;
                 string[] data = lines[i].Split(',');
+                if (data.Length < 2) continue;
 
-                string type = data[0];
-
-                if (type == "Minion")
-                {
-                    CreateMinionCard(data);
-                }
-                // 以后可以在这里增加 Spell, Weapon 等
+                string type = data[0].Trim();
+                if (type == "Minion") CreateMinionCard(data);
+                else if (type == "Spell") CreateSpellCard(data);
             }
 
-            foreach (var card in _cards)
-            {
-                _battleDeck.AddCard(card.CardID);
-            }
+
+            for (int i = 0; i < 10; i++)
+                _battleDeck.AddCard(0);
+
+            // 抽取法术牌 ID=29，放2张
+            for (int i = 0; i < 2; i++)
+                _battleDeck.AddCard(29);
         }
+
+        public void CreateSpellCard(string[] data)
+        {
+            int id = int.Parse(data[1].Trim());
+            string name = data[2].Trim();
+            int cost = int.Parse(data[5].Trim());
+            string effectType = data.Length > 6 ? data[6].Trim() : "None";
+            int effectValue = data.Length > 7 && !string.IsNullOrWhiteSpace(data[7]) ? int.Parse(data[7].Trim()) : 0;
+            string description = data.Length > 8 ? data[8].Trim() : "";
+            bool needsTarget = effectType == "SpellDamageTarget";
+
+            SpellCard card = new SpellCard(id, name, cost, description, effectType, effectValue, needsTarget, description);
+            _cards.Add(card);
+            Debug.Log($"读取法术: {card.CardName} (Cost:{card.Cost})");
+        }
+
         public void CreateMinionCard(string[] data)
         {
-            MinionCard newCard = new MinionCard(int.Parse(data[1]), data[2], int.Parse(data[5]), int.Parse(data[4]), int.Parse(data[3]));
-            // 数据填充
-            newCard.Type = CardType.Minion;
-            _cards.Add(newCard);
-            Debug.Log($"读取成功: {newCard.CardName} (ATK:{newCard.Attack})");
+            int id = int.Parse(data[1].Trim());
+            string name = data[2].Trim();
+            int hp = int.Parse(data[3].Trim());
+            int atk = int.Parse(data[4].Trim());
+            int cost = int.Parse(data[5].Trim());
+            string effectType = data.Length > 6 ? data[6].Trim() : "None";
+            int effectValue = data.Length > 7 && !string.IsNullOrWhiteSpace(data[7]) ? int.Parse(data[7].Trim()) : 0;
+            string description = data.Length > 8 ? data[8].Trim() : "";
+
+            MinionCard card = new MinionCard(id, name, cost, atk, hp, effectType, effectValue, description);
+            _cards.Add(card);
+            Debug.Log($"读取随从: {card.CardName} (ATK:{card.Attack} HP:{card.Health})");
         }
 
         //从文件区域读取玩家的保存信息
         //保存为json格式的文件
         //deck
         //id num 键值对
-        public void SaveDecks()
+        private string GetSavePath()
         {
-            foreach (var deck in _decks.Values)
+            string path = Path.Combine(Application.persistentDataPath, "PlayerData");
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+            return path;
+        }
+        private string GetDeckPath(string deckName)
+        {
+            return Path.Combine(GetSavePath(), deckName + ".json");
+        }
+        public async Task SaveDeckAsync()
+        {
+            if (!_tempDeck.IsLegal())
             {
-                if (deck != null)
-                {
-                    SaveDeck(deck);
-                }
+                Debug.LogWarning("卡组不合法，无法保存");
+                return;
+            }
+
+            // 序列化在主线程做（访问 Unity 对象必须在主线程）
+            string deckPath = GetDeckPath(_tempDeck._deckName);
+            string json = JsonConvert.SerializeObject(_tempDeck, Formatting.Indented);
+
+            // 文件 IO 丢到后台线程
+            try
+            {
+                await Task.Run(() => File.WriteAllText(deckPath, json));
+
+                // 回到主线程更新数据（await 之后自动回主线程）
+                _decks[_tempDeck._deckName] = _tempDeck;
+                _saveDecks.RemoveAll(d => d._deckName == _tempDeck._deckName);
+                _saveDecks.Add(_tempDeck);
+                Debug.Log($"卡组已保存至: {deckPath}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("保存失败: " + e.Message);
             }
         }
+
+        public async Task DeleteDeckAsync(Deck deck)
+        {
+            string deckPath = GetDeckPath(deck._deckName);
+            try
+            {
+                if (File.Exists(deckPath))
+                    await Task.Run(() => File.Delete(deckPath));
+
+                _decks.Remove(deck._deckName);
+                _saveDecks.Remove(deck);
+                Debug.Log("卡组已删除: " + deck._deckName);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("删除失败: " + e.Message);
+            }
+        }
+
         private void SaveDeck(Deck deck)
         {
             //直接用json自带的序列化保存
@@ -154,6 +215,8 @@ namespace CardGame
                 Debug.LogError("Failed to save deck: " + e.Message);
             }
         }
+
+
 
         //加载保存的卡组数据
         public void GetAllSavedDecks()
@@ -302,9 +365,13 @@ namespace CardGame
         {
 
             _playerData._name = name;
-
         }
 
+        //同步登录信息
+        public void SetLoginState()
+        {
+            _isLogin = true;
+        }
         public PlayerBaseData GetPlayerData()
         {
             return _playerData;
@@ -346,6 +413,13 @@ namespace CardGame
         public int GetTempDeckCount()
         {
             return _tempDeck.GetCardCount();
+        }
+
+        //选择卡组
+        public void SelectBattleDeck(Deck deck)
+        {
+            _battleDeck = deck;
+            Debug.Log($"已选择卡组: {deck._deckName}");
         }
     }
 }

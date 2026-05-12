@@ -97,13 +97,22 @@ public class CardInstanceUI : MonoBehaviour, IDragHandler, IEndDragHandler, IBeg
     public BattleInfo _user;
     public TextMeshProUGUI _healthText;
     public TextMeshProUGUI _attackText;
+    public Image _cardArtImage;
     private CardInstance _cardInstance;
     public GameObject _arrowPrefab;
     private GameObject _arrow;
     public int _instanceId;
+    private int _attackUsed;
+    private CardFrameApplier _frameApplier;
+
+    private static readonly Color ColorCanAttack    = new Color(0.15f, 1f,   0.25f, 1f);
+    private static readonly Color ColorCannotAttack = new Color(1f,   0.2f,  0.15f, 1f);
+    private static readonly Color ColorDefault      = new Color(0f,   0.9f,  1f,    1f);
+
     private void Awake()
     {
-        rectTransform = GetComponent<RectTransform>();
+        rectTransform  = GetComponent<RectTransform>();
+        _frameApplier  = GetComponentInChildren<CardFrameApplier>();
     }
     public void DestroySelf()
     {
@@ -119,6 +128,17 @@ public class CardInstanceUI : MonoBehaviour, IDragHandler, IEndDragHandler, IBeg
         _attackText.text = _cardInstance._instanceAttack.ToString();
         _cardInstance.UpdateAttack();
         _user = user;
+        LoadMiniCardImage(card.CardID);
+    }
+
+    private void LoadMiniCardImage(int cardId)
+    {
+        if (_cardArtImage == null) return;
+        Sprite sprite = Resources.Load<Sprite>($"CardImage/MiniCard/{cardId}");
+        if (sprite != null)
+            _cardArtImage.sprite = sprite;
+        else
+            Debug.LogWarning($"找不到 mini 卡图: CardImage/MiniCard/{cardId}");
     }
     public CardInstance GetCardInstance()
     {
@@ -138,10 +158,33 @@ public class CardInstanceUI : MonoBehaviour, IDragHandler, IEndDragHandler, IBeg
         _healthText.text = hp.ToString();
         _attackText.text = attack.ToString();
 
-        // attackUsed > 0 表示本回合已攻击，变灰
-        var cg = GetComponent<CanvasGroup>();
-        if (cg == null) cg = gameObject.AddComponent<CanvasGroup>();
-        cg.alpha = (attackUsed == 0) ? 1f : 0.5f;
+        _attackUsed = attackUsed;
+        RefreshAttackVisual(attackUsed);
+    }
+
+    public int GetAttackUsed() => _attackUsed;
+
+    public void RefreshAttackVisual(int attackUsed)
+    {
+        bool isMyMinion = BattleManager.Instance != null &&
+                          _user == BattleManager.Instance._playerIsFirst;
+
+
+        if (_frameApplier == null)
+        {
+            Debug.LogWarning($"[CardInstanceUI] frameApplier 为空，id={_instanceId}，请检查 Outline 子对象是否挂了 CardFrameApplier");
+            return;
+        }
+
+        if (!isMyMinion)
+        {
+            _frameApplier.BorderColor = ColorDefault;
+            return;
+        }
+
+        bool canAttack = attackUsed == 0 && BattleManager.Instance._isMyTurn;
+        Debug.Log($"[CardInstanceUI] id={_instanceId} attackUsed={attackUsed} isMyTurn={BattleManager.Instance._isMyTurn} → {(canAttack ? "绿" : "红")}");
+        _frameApplier.BorderColor = canAttack ? ColorCanAttack : ColorCannotAttack;
     }
 
     //攻击指向箭头
@@ -183,7 +226,11 @@ public class CardInstanceUI : MonoBehaviour, IDragHandler, IEndDragHandler, IBeg
         }
         if (enemy == null)
         {
-            Debug.Log("AttackRequest");
+            if (BattleManager.Instance._enemyCardPlace.GetMiniCardCount() > 0)
+            {
+                Debug.Log("敌方有随从，不能直攻英雄");
+                return;
+            }
             BattleManager.Instance.RequestAttack(_instanceId, -1);
         }
         else

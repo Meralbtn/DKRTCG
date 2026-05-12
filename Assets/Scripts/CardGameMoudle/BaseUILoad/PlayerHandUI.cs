@@ -59,9 +59,10 @@ public class PlayerHandUI : MonoBehaviour
                 cardObj.GetComponent<CardUIManager>().InitialBackCard();
             }
 
-            cardScript._handIndex = instanceId;
-            cardScript._user         = _playerId;
-            // 禁用敌方卡牌交互
+            cardScript._serverInstanceId = instanceId;
+            cardScript._handIndex = activeCards.Count;
+            cardScript._user = _playerId;
+
             var cg = cardScript.GetComponent<CanvasGroup>();
             if (cg != null) cg.blocksRaycasts = false;
 
@@ -75,22 +76,24 @@ public class PlayerHandUI : MonoBehaviour
         {
             cardScript = cardPool[0];
             cardPool.RemoveAt(0);
-            cardScript.gameObject.SetActive(true);
-            cardScript.transform.SetParent(this.transform);
+            // 先更新数据再激活，避免旧数值闪烁一帧
             cardScript.GetComponent<CardUIManager>().card = drawCards;
             cardScript.GetComponent<CardUIManager>().InitialCard();
+            cardScript.transform.SetParent(this.transform);
+            cardScript.gameObject.SetActive(true);
         }
         else
         {
             GameObject cardObj = Instantiate(_cardPrefab, transform, false);
             cardScript = cardObj.GetComponent<CardInBattleUI>();
             cardObj.GetComponent<CardUIManager>().state = CardState.Battle;
-            cardObj.GetComponent<CardUIManager>().card  = drawCards;
+            cardObj.GetComponent<CardUIManager>().card = drawCards;
             cardObj.GetComponent<CardUIManager>().InitialCard();
         }
 
-        cardScript._handIndex = instanceId;  // 记录 HandId
-        cardScript._user         = _playerId;
+        cardScript._serverInstanceId = instanceId;
+        cardScript._handIndex = activeCards.Count;
+        cardScript._user = _playerId;
         cardScript.OnRequestRemoval -= HandleCardRemove;
         cardScript.OnRequestRemoval += HandleCardRemove;
 
@@ -116,24 +119,32 @@ public class PlayerHandUI : MonoBehaviour
 
     public void SyncFromServer(List<HandCardState> serverHand)
     {
-       //找出需要删除的牌
         var serverIds = new HashSet<int>(serverHand.Select(h => h.InstanceId));
+        Debug.Log($"SyncFromServer: 服务器手牌数={serverHand.Count} serverIds={string.Join(",", serverIds)}");
+        Debug.Log($"SyncFromServer: 本地手牌数={activeCards.Count} localIds={string.Join(",", activeCards.Select(c => c._serverInstanceId))}");
+
         var toRemove = activeCards
-            .Where(c => !serverIds.Contains(c._handIndex))
+            .Where(c => !serverIds.Contains(c._serverInstanceId))
             .ToList();
 
+        Debug.Log($"SyncFromServer: 需要移除={toRemove.Count}");
         foreach (var card in toRemove)
             HandleCardRemove(card);
 
-        // 2. 找出需要新增的牌（服务器有，本地没有）
-        var localIds = new HashSet<int>(activeCards.Select(c => c._handIndex));
+        var localIds = new HashSet<int>(activeCards.Select(c => c._serverInstanceId));
         var toAdd = serverHand.Where(h => !localIds.Contains(h.InstanceId)).ToList();
+        Debug.Log($"SyncFromServer: 需要新增={toAdd.Count}");
 
         foreach (var handCard in toAdd)
         {
             Card cardData = PlayerManager.Instance().GetCardList()[handCard.CardId];
             AddDrawCard(cardData, handCard.InstanceId);
         }
+
+        for (int i = 0; i < activeCards.Count; i++)
+            activeCards[i]._handIndex = i;
+
+        SortLayout();
     }
 
     public void SyncEnemyFromServer(int enemyHandCount)
@@ -148,11 +159,31 @@ public class PlayerHandUI : MonoBehaviour
         }
         else if (enemyHandCount < current)
         {
-            // 从末尾移除多余卡背
-            for (int i = current - 1; i >= enemyHandCount; i--)
-                HandleCardRemove(activeCards[i]);
+            int removeCount = current - enemyHandCount;
+            for (int i = 0; i < removeCount; i++)
+            {
+                var last = activeCards[activeCards.Count - 1];
+                HandleCardRemove(last);
+            }
         }
         // 数量相同不操作，不闪烁
+    }  
+
+    public void RefreshOutlineByAffordability(int currentCost)
+    {
+        bool fieldFull = BattleManager.Instance != null &&
+                         BattleManager.Instance._playerCardPlace.GetMiniCardCount() >= 5;
+        foreach (Transform child in transform)
+        {
+            var cardView  = child.GetComponent<CardUIManager>();
+            var cardView1 = child.GetComponent<CardInBattleUI>();
+            if (cardView == null) continue;
+
+            bool canAfford = cardView.card.Cost <= currentCost;
+            bool blocked   = cardView.card is MinionCard && fieldFull;
+            var state = (canAfford && !blocked) ? OutlineState.Available : OutlineState.None;
+            cardView1.OutlineController.SetOutline(state);
+        }
     }
 
     //布局调整

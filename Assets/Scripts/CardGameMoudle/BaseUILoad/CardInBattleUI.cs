@@ -1,144 +1,192 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using DG.Tweening;
 using CardGame;
 using System;
-public class CardInBattleUI : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IBeginDragHandler, IDragHandler, IEndDragHandler
-{
 
+public class CardInBattleUI : MonoBehaviour,
+    IPointerEnterHandler, IPointerExitHandler,
+    IInitializePotentialDragHandler,
+    IBeginDragHandler, IDragHandler, IEndDragHandler
+{
     public RectTransform rectTransform;
     public int _handIndex { get; set; }
+    public int _serverInstanceId { get; set; } = -1;
     public Action<CardInBattleUI> OnRequestRemoval;
-    public Vector3 _originalScale = new Vector3(0.5f, 0.5f, 1f); // 对应你之前的缩放
-    // 放大后的比例
+
+    public Vector3 _originalScale = new Vector3(0.5f, 0.5f, 1f);
     public float _hoverScale = 0.65f;
-    // 向上弹起的距离
     public float _moveUpAmount = 30f;
-    //当卡牌被使用时，需求达到的拖拽距离
-    public float _useThreshold = 200f;
-    private Vector3 _dragStartPos;
-    private Tween _hoverTween;
-    private Vector3 _velocity = Vector3.zero;
-    public float smoothTime = 0.05f;
-    private Vector3 _offset;
-    //卡牌的状态
+    public float _useThreshold = 200f;   // 屏幕像素，拖拽触发出牌的最小 Y 距离
+
+    private Vector2 _dragStartAnchoredPos;
+    private float _dragScreenDeltaY;     // 累计屏幕像素 Y，用于出牌阈值判断
+    private Sequence _hoverSeq;
+    private bool _isAnimating;
+    private Canvas _rootCanvas;
+
     public BattleCardState _state;
     public BattleInfo _user;
     private CanvasGroup _canvasGroup;
+    private CardUIManager _cardUIManager;
+    private CardDissolveEffect _dissolveEffect;
+    public CardOutlineController OutlineController { get; private set; }
+
     private void Awake()
     {
         rectTransform = GetComponent<RectTransform>();
         _canvasGroup = GetComponent<CanvasGroup>();
         if (_canvasGroup == null)
             _canvasGroup = gameObject.AddComponent<CanvasGroup>();
+        _cardUIManager = GetComponent<CardUIManager>();
+        _dissolveEffect = GetComponent<CardDissolveEffect>();
+        OutlineController = GetComponent<CardOutlineController>();
+        _rootCanvas = GetComponentInParent<Canvas>();
+    }
+
+    private void OnEnable()
+    {
+        // 仅在战斗模式启用时才强制 scale，卡组视图不受影响
         transform.localScale = _originalScale;
     }
 
-    public void SetWhoUsed(BattleInfo player)
-    {
-        _user = player;
-    }
+    public void SetWhoUsed(BattleInfo player) => _user = player;
+
+    // ── Hover ───────────────────────────────────────────────
+
     public void OnPointerEnter(PointerEventData eventData)
     {
-        if (eventData.pointerDrag != null) return;
-        // 停止之前的动画，防止抖动
-        _hoverTween?.Kill();
-
-        // 组合动画：变大 + 向上移
-        // 注意：如果用了LayoutGroup，修改localPosition会被布局组件每帧重置
-        // 建议在进入时禁用 LayoutElement (如果挂了的话) 或者通过偏移实现
-        transform.DOScale(_hoverScale, 0.2f).SetEase(Ease.OutBack);
-        transform.DOLocalMoveY(_moveUpAmount, 0.2f).SetEase(Ease.OutCubic);
-
-        // 提升层级，确保被放大的牌在最前面
+        if (_isAnimating || eventData.pointerDrag != null) return;
+        _hoverSeq?.Kill();
+        _hoverSeq = DOTween.Sequence()
+            .Join(transform.DOScale(_hoverScale, 0.2f).SetEase(Ease.OutBack))
+            .Join(transform.DOLocalMoveY(_moveUpAmount, 0.2f).SetEase(Ease.OutCubic));
         transform.SetAsLastSibling();
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
-        _hoverTween?.Kill();
-
-        transform.DOScale(_originalScale, 0.2f);
-        transform.DOLocalMoveY(0, 0.2f);
+        if (_isAnimating) return;
+        _hoverSeq?.Kill();
+        _hoverSeq = DOTween.Sequence()
+            .Join(transform.DOScale(_originalScale, 0.2f))
+            .Join(transform.DOLocalMoveY(0f, 0.2f));
     }
 
+    // ── Drag ────────────────────────────────────────────────
+
+    // 禁用 EventSystem 内置拖拽阈值，让拖拽立即响应，消除起步卡顿
+    public void OnInitializePotentialDrag(PointerEventData eventData)
+    {
+        eventData.useDragThreshold = false;
+    }
 
     public void OnBeginDrag(PointerEventData eventData)
     {
-        _offset = transform.position - (Vector3)eventData.position;
-        _hoverTween?.Kill(true);
+        if (_isAnimating) return;
+
+        _hoverSeq?.Kill();
+        transform.DOKill();
+
         transform.localScale = _originalScale;
-        transform.localPosition = new Vector3(transform.localPosition.x, 0, 0);
+        transform.localPosition = new Vector3(transform.localPosition.x, 0f, 0f);
+
+        _dragStartAnchoredPos = rectTransform.anchoredPosition;
+        _dragScreenDeltaY = 0f;
+
         _canvasGroup.blocksRaycasts = false;
-        _dragStartPos = transform.position;
+        transform.SetAsLastSibling();
     }
+
     public void OnDrag(PointerEventData eventData)
     {
-        Vector3 targetPos = (Vector3)eventData.position + _offset;
-        // 使用 SmoothDamp 平滑过渡
-        transform.position = Vector3.SmoothDamp(transform.position, targetPos, ref _velocity, smoothTime);
+        if (_isAnimating) return;
+
+        // delta 是屏幕像素，除以 scaleFactor 转为 Canvas 本地单位
+        float scale = _rootCanvas != null ? _rootCanvas.scaleFactor : 1f;
+        rectTransform.anchoredPosition += eventData.delta / scale;
+        _dragScreenDeltaY += eventData.delta.y;
     }
 
     public void OnEndDrag(PointerEventData eventData)
     {
-        bool isUsed = false;
-        if ((transform.position.y - _dragStartPos.y) > _useThreshold)
-        {
-            //召唤请求
-            Card card = GetComponent<CardUIManager>().card;
-            if (card is MinionCard)
-            {
-                if (card.Cost > BattleManager.Instance._playerTrueCostPoint)
-                {
-                    Debug.Log("费用不足");
-                    //播放一个费用不足的提示动画
-                    ShowInsufficientCostEffect();
-                }
-                // 本地预校验：不是自己的回合
-                else if (!BattleManager.Instance._isMyTurn)
-                {
-                    Debug.Log("还没到你的回合");
-                }
-                // 本地预校验：场地满了（最多7个）
-                else if (BattleManager.Instance._playerCardPlace.GetMiniCardCount() >= 7)
-                {
-                    Debug.Log("场地已满");
-                }
-                else
-                {
-                    Debug.Log("Summon Minion request");
-                    BattleManager.Instance._playerTrueCostPoint -= card.Cost; // 先行扣除费用，优化用户体验
-                    BattleManager.Instance.RequestPlayCard(_handIndex);
-                    isUsed = true;
-                }
-            }
-            else if (card is SpellCard)
-            {
-            }
-        }
-        if (!isUsed)
-            transform.DOMove(_dragStartPos, 0.2f).SetEase(Ease.OutCubic);
-        else
-            ReleaseCard();
+        _canvasGroup.blocksRaycasts = true;
+        transform.DOKill();
 
-        _canvasGroup.blocksRaycasts = true; // 恢复射线阻挡
+        if (_isAnimating) return;
+
+        if (_dragScreenDeltaY <= _useThreshold)
+        {
+            ReturnToHand();
+            return;
+        }
+
+        Card card = _cardUIManager.card;
+
+        // ── 前置校验，失败直接回手 ────────────────────────
+        if (!BattleManager.Instance._isMyTurn)
+        {
+            ReturnToHand();
+            return;
+        }
+        if (card.Cost > BattleManager.Instance._playerTrueCostPoint)
+        {
+            ShowInsufficientCostEffect();
+            return;
+        }
+        if (card is MinionCard && BattleManager.Instance._playerCardPlace.GetMiniCardCount() >= 5)
+        {
+            ShowInsufficientCostEffect();
+            return;
+        }
+
+        // ── 出牌成功 ──────────────────────────────────────
+        _isAnimating = true;
+        BattleManager.Instance._playerTrueCostPoint -= card.Cost;
+
+        if (card is MinionCard || (card is SpellCard sp && !sp.NeedsTarget))
+        {
+            PlayCardAnimation(() =>
+            {
+                _isAnimating = false;
+                ReleaseCard();
+                BattleManager.Instance.RequestPlayCard(_handIndex);
+            });
+        }
+        else if (card is SpellCard spellCard && spellCard.NeedsTarget)
+        {
+            _isAnimating = false;
+        }
     }
 
-    // 费用不足时的视觉反馈
+    // ── 辅助 ────────────────────────────────────────────────
+
+    private void ReturnToHand()
+    {
+        rectTransform.DOAnchorPos(_dragStartAnchoredPos, 0.25f).SetEase(Ease.OutCubic);
+    }
+
     private void ShowInsufficientCostEffect()
     {
-        // 抖动提示
-        transform.DOShakePosition(0.3f, strength: 10f, vibrato: 20)
-                 .OnComplete(() => transform.DOMove(_dragStartPos, 0.2f));
+        _isAnimating = true;
+        rectTransform.DOShakeAnchorPos(0.3f, strength: 10f, vibrato: 20)
+            .OnComplete(() =>
+            {
+                _isAnimating = false;
+                rectTransform.DOAnchorPos(_dragStartAnchoredPos, 0.2f).SetEase(Ease.OutCubic);
+            });
     }
 
-    void ReleaseCard()
+    private void PlayCardAnimation(Action onComplete)
     {
-        if (OnRequestRemoval != null)
-        {
-            OnRequestRemoval.Invoke(this);
-        }
+        if (_dissolveEffect != null)
+            _dissolveEffect.PlayDissolve(onComplete);
+        else
+            onComplete?.Invoke();
+    }
+
+    private void ReleaseCard()
+    {
+        OnRequestRemoval?.Invoke(this);
     }
 }

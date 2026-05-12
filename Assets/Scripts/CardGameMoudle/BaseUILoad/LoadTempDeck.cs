@@ -9,6 +9,8 @@ public class LoadTempDeck : MonoBehaviour
     public GameObject _cardPrefab;
     public Transform _father;
 
+    public float _deckNameFontSize = 26f;
+
     private void Awake()
     {
         LoadTempDeckUI();
@@ -32,11 +34,12 @@ public class LoadTempDeck : MonoBehaviour
         {
             List<Card> systemCard = PlayerManager.Instance().GetCardList();
             Card card = systemCard[value.Key];
-            GameObject cardUI = Instantiate(_cardPrefab, _father);
-            CardUIManager manager =cardUI.GetComponent<CardUIManager>();
+            GameObject cardUI = Instantiate(_cardPrefab, _father, false);
+            CardUIManager manager = cardUI.GetComponent<CardUIManager>();
             manager.card = card;
             manager.InitialCard();
             manager.ShowDeckNum(value.Value);
+            manager.cardName.fontSize = _deckNameFontSize;
         }
     }
     

@@ -6,9 +6,9 @@ namespace CardGame
     public class Deck
     {
         public string _deckName;
-        public Dictionary<int,int> _cards;
+        public Dictionary<int, int> _cards;
         public int _maxCardCount = 40;
-        public int _count=0;
+        public int _count = 0;
         public bool _isLegal = false;
 
         public Deck()
@@ -26,7 +26,7 @@ namespace CardGame
             foreach (var card in _cards)
             {
                 int count = card.Value;
-                
+
                 for (int i = 0; i < count; i++)
                 {
                     //深拷贝确保不影响系统牌
@@ -41,7 +41,8 @@ namespace CardGame
             List<int> netList = new List<int>();
             foreach (var card in _cards)
             {
-                netList.Add(card.Key);
+                for (int i = 0; i < card.Value; i++)
+                    netList.Add(card.Key);
             }
             return netList;
         }
@@ -75,7 +76,7 @@ namespace CardGame
             if (_cards.ContainsKey(cardId))
             {
                 // 如果已经有了，就只增加数量
-                _cards[cardId]++; 
+                _cards[cardId]++;
             }
             else
             {
@@ -83,7 +84,7 @@ namespace CardGame
                 _cards.Add(cardId, 1);
             }
         }
-        
+
         public void DeleteCard(int cardId)
         {
             if (!_cards.ContainsKey(cardId))

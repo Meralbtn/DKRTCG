@@ -7,6 +7,7 @@ using CardGameApp;
 using UnityEngine.SceneManagement;
 using Unity.VisualScripting;
 using System.Collections.Generic;
+using System.Collections;
 public class ClientOnClick : MonoBehaviour
 {
     public RoomListView _roomListView;
@@ -14,7 +15,7 @@ public class ClientOnClick : MonoBehaviour
     public RoomTipUI _roomTipUI;
     public GameObject _menuUI;
     public GameObject _roomContentUI;
-
+    public GameObject _loginTipUI;
 
     private void Awake()
     {
@@ -45,7 +46,22 @@ public class ClientOnClick : MonoBehaviour
 
     public void RoomSceneOpen()
     {
+        if (!PlayerManager.Instance().IsLogin())
+        {
+            // 处理未登录情况
+            Debug.Log("玩家未登录，无法进入房间列表");
+            //展示未登录文字提示
+            StartCoroutine(ShowLoginTip());
+            return;
+        }
         SceneManager.LoadScene("RoomList");
+    }
+
+    public IEnumerator ShowLoginTip()
+    {
+        _loginTipUI.SetActive(true);
+        yield return new WaitForSeconds(2f);  
+        _loginTipUI.SetActive(false);
     }
 
     public void ReturnMainSc()

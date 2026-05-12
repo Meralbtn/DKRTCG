@@ -1,13 +1,14 @@
 using UnityEngine;
 using TMPro;
 using CardGame;
+using UnityEngine.EventSystems;
 
-public class DeckItemUI : MonoBehaviour
+public class DeckItemUI : MonoBehaviour, IPointerClickHandler
 {
     public TextMeshProUGUI _deckNameText;
     public TextMeshProUGUI _cardCountText;
 
-    private Deck        _deck;
+    private Deck _deck;
     private DeckListUI  _listUI;
 
     public void Init(Deck deck, DeckListUI listUI)
@@ -19,22 +20,12 @@ public class DeckItemUI : MonoBehaviour
         _cardCountText.text = $"{deck.GetCardCount()}/40";
     }
 
-    // 编辑按钮
-    public void OnClickEdit()
+    public void OnPointerClick(PointerEventData eventData)
     {
-        _listUI.SelectDeckForEdit(_deck);
+        if (eventData.button == PointerEventData.InputButton.Left)
+        {
+            DeckEditManager.Instance.ShowDeckEditPanel(_deck);
+        }
     }
 
-    // 删除按钮
-    public void OnClickDelete()
-    {
-        _listUI.DeleteDeck(_deck);
-    }
-
-    // 选为战斗卡组按钮
-    public void OnClickSelect()
-    {
-        PlayerManager.Instance().ChoseDeck(_deck._deckName);
-        Debug.Log($"已选择战斗卡组: {_deck._deckName}");
-    }
 }

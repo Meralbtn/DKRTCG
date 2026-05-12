@@ -26,15 +26,13 @@ public class MiniCardGridManager : MonoBehaviour
     public BattleInfo _user;
     #endregion
 
-    public int GetMiniCardCount()
-    {
-        return _activeCards.Count;
-    }
+    public int GetMiniCardCount() => _activeInstances.Count;
 
-    public void SyncFromServer(List<MiniCardState> serverCards)
+    public IReadOnlyList<CardInstanceUI> GetActiveCards() => _activeCards;
+
+    public void SyncFromServer(List<MiniCardState> serverCards, bool isEnemy = false)
     {
         if (serverCards == null) serverCards = new List<MiniCardState>();
-
         //删除服务器已不存在的随从
         var serverIds = new HashSet<int>(serverCards.Select(c => c.InstanceId));
         var toRemove = _activeInstances
@@ -59,7 +57,6 @@ public class MiniCardGridManager : MonoBehaviour
                 _activeInstances[sc.InstanceId] = cardScript;
             }
 
-            // 3. 更新数值（HP、攻击力、是否可攻击）
             var inst = _activeInstances[sc.InstanceId];
             inst.UpdateStats(sc.HP, sc.Attack, sc.AttackUsed);
         }
@@ -85,13 +82,17 @@ public class MiniCardGridManager : MonoBehaviour
         }
 
         cardScript.SetCardInstance(card, _user);
-        // 记录服务器 instanceId
-        cardScript._instanceId = instanceId;  
+        cardScript._instanceId = instanceId;
         cardScript.OnRequestRemoval -= HandleCardRemove;
         cardScript.OnRequestRemoval += HandleCardRemove;
         cardScript._user = _user;
-        _activeCards.Add(cardScript);
 
+        // 每次都重新绑定，覆盖 Inspector 的静态引用
+        var zone = cardScript.GetComponent<MiniCardZone>();
+        if (zone != null)
+            zone._instanceUI = cardScript;
+
+        _activeCards.Add(cardScript);
         return cardScript;
     }
 
@@ -102,12 +103,14 @@ public class MiniCardGridManager : MonoBehaviour
         {
             _activeCards.Remove(cardScript);
 
-            cardScript.gameObject.SetActive(false);
+            // 同步清 _activeInstances
+            var key = _activeInstances.FirstOrDefault(kv => kv.Value == cardScript).Key;
+            if (_activeInstances.ContainsKey(key))
+                _activeInstances.Remove(key);
 
+            cardScript.gameObject.SetActive(false);
             if (!_cardPool.Contains(cardScript))
-            {
                 _cardPool.Add(cardScript);
-            }
             SortLayout();
         }
     }
