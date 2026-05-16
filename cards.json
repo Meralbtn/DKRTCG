@@ -28,5 +28,14 @@
   { "Id": 26, "Name": "异能术士", "Type": "Minion", "Hp": 9,  "Attack": 9,  "Cost": 10 },
   { "Id": 27, "Name": "救济的圣女","Type": "Minion","Hp": 6,  "Attack": 5,  "Cost": 4  },
   { "Id": 28, "Name": "成都王",   "Type": "Minion", "Hp": 4,  "Attack": 4,  "Cost": 3  },
-  { "Id": 29, "Name": "抽取", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 1, "EffectType": "DrawCard", "EffectValue": 1}
+  { "Id": 29, "Name": "抽取", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 1, "EffectType": "DrawCard", "EffectValue": 1},
+  { "Id": 30, "Name": "亡灵",   "Type": "Minion", "Hp": 1,  "Attack": 1,  "Cost": 1  },
+{ "Id": 31, "Name": "权欲王冠", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 1, "EffectType": "HealthRecovery", "EffectValue": 5},
+{ "Id": 32, "Name": "火球", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 1, "EffectType": "DrawCard", "EffectValue": 4},
+{ "Id": 33, "Name": "虚惘之剑", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 2, "EffectType": "DirectAttack", "EffectValue": 0},
+{ "Id": 34, "Name": "琴音", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 3, "EffectType": "AddAllAttack", "EffectValue": 1},
+{ "Id": 35, "Name": "篡权", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 2, "EffectType": "StealEntity", "EffectValue": 0},
+{ "Id": 36, "Name": "魔刺", "Type": "Spell", "Hp": 0, "Attack": 0,"Cost": 2,"EffectType": "RDAndDrawCard","EffectValue": 1},
+{ "Id": 37,"Name": "金币","Type": "Spell","Hp":0,"Attack": 0,"Cost": 0,"EffectType": "DrawCard","EffectValue": 1},
+{ "Id": 38, "Name": "禁忌书籍", "Type": "Spell", "Hp": 0, "Attack": 0, "Cost": 5, "EffectType": "AllTKAndBackCost", "EffectValue": 4}
 ]

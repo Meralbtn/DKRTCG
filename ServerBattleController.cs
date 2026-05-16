@@ -33,6 +33,8 @@ namespace CardGameServer
         public int EnemyInitialCost { get; set; }
         public List<HandCardState> MyHand { get; set; }
         public int EnemyHand { get; set; }
+        public int MyDeckCount { get; set; }    // 新增
+        public int EnemyDeckCount { get; set; } // 新增
     }
 
     public class UseCardPackage
@@ -75,7 +77,8 @@ namespace CardGameServer
         public List<MiniCardState> EnemyField;
         public List<HandCardState> MyHand;
         public int EnemyHandCount;
-
+        public int MyDeckCount;    // 新增
+        public int EnemyDeckCount; // 新增
         public int LastAttackerInstanceId = -1;
         public int LastTargetInstanceId = -1;
     }
@@ -192,7 +195,9 @@ namespace CardGameServer
                     CardId = h.CardId,
                     InstanceId = h.InstanceId
                 }).ToList(),
-                EnemyHand = enemyState.Hand.Count
+                EnemyHand = enemyState.Hand.Count,
+                MyDeckCount = myState.Deck.Count,    // 新增
+                EnemyDeckCount = enemyState.Deck.Count, // 新增
             };
 
             var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(pkg));
@@ -265,7 +270,6 @@ namespace CardGameServer
                     var rand = new Random();
                     int totalTargets = enemyState.Board.Count + 1; // 随从 + 英雄
                     int pick = rand.Next(totalTargets);
-
                     if (pick < enemyState.Board.Count)
                     {
                         var target = enemyState.Board[pick];
@@ -387,8 +391,11 @@ namespace CardGameServer
             }
 
             DrawCard(nextState, 1);
-            Console.WriteLine($"回合切换，现在轮到 {CurrentTurnPlayer._name}");
-            BroadcastBattleState(req.ActionId, "None", 0);
+            if (!IsFinished)  // 新增：抽死牌时 DrawCard 内部已广播，不要再广播一次
+            {
+                Console.WriteLine($"回合切换，现在轮到 {CurrentTurnPlayer._name}");
+                BroadcastBattleState(req.ActionId, "None", 0);
+            }
         }
 
         private void BroadcastBattleState(string actionId, string gameResult,
@@ -436,7 +443,8 @@ namespace CardGameServer
                 EnemyCost = enemyState.CurrentCost,
                 EnemyMaxCost = enemyState.MaxCost,
                 EnemyHandCount = enemyState.Hand.Count,
-
+                MyDeckCount = myState.Deck.Count,
+                EnemyDeckCount = enemyState.Deck.Count,
                 MyHand = myState.Hand.Select(h => new HandCardState
                 {
                     CardId = h.CardId,
