@@ -232,11 +232,15 @@ namespace CardGameServer
             if (cfg.Type == "Spell")
             {
                 ApplySpellEffect(player, cfg, req);
-                var enemyId = player._id == Player1._id ? Player2._id : Player1._id;
-                string spellResult = States[enemyId].Hp <= 0 ? "settled" : "None";
-                BroadcastBattleState(req.ActionId, spellResult, 0);
+                if (!IsFinished)  // 防止 DrawCard 内部已广播结局
+                {
+                    var enemyId = player._id == Player1._id ? Player2._id : Player1._id;
+                    string spellResult = States[enemyId].Hp <= 0 ? "settled" : "None";
+                    BroadcastBattleState(req.ActionId, spellResult, 0);
+                }
                 return;
             }
+
 
             if (myState.Board.Count >= 5)
             { SendAck(player, req.ActionId, ErrorCode.InvalidRequest, "场地已满"); return; }
