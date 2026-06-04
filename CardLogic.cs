@@ -38,7 +38,8 @@ namespace CardGameServer
 
         BattleStateSync = 2002,
         BattleActionAck = 2003,
-        Surrender = 4004
+        Surrender = 4004,
+        PlayCardWithTarget = 4005,
     }
     public enum ErrorCode
     {
@@ -57,7 +58,13 @@ namespace CardGameServer
         public string Email { get; set; }
         public string PasswordHash { get; set; }
     }
-
+    public class UseCardWithTargetPackage
+    {
+        public Guid SessionId { get; set; }
+        public string ActionId { get; set; }
+        public int CardInstanceId { get; set; }
+        public int TargetInstanceId { get; set; } // -1 表示无目标（直攻英雄或AOE）
+    }
     public class AuthResultPackage
     {
         public ErrorCode ErrorCode { get; set; }
@@ -428,6 +435,19 @@ namespace CardGameServer
             battle.HandleEndTurn(GetPlayerBySession(session, battle), req);
         }
 
+        private void OnUseCardWithTarget(Session session, byte[] data)
+        {
+            var req = JsonConvert.DeserializeObject<UseCardWithTargetPackage>(
+                Encoding.UTF8.GetString(data));
+            var battle = GetBattleBySession(session);
+            if (battle == null)
+            {
+                Console.WriteLine("找不到对应战斗");
+                return;
+            }
+            battle.HandleUseCardWithTarget(GetPlayerBySession(session, battle), req);
+        }
+
         private BattleController GetBattleBySession(Session session)
         {
             var room = _roomManager.GetAllRooms()
@@ -578,8 +598,9 @@ namespace CardGameServer
                 if (battle == null)
                 { Console.WriteLine("找不到对应战斗"); return; }
                 var player = GetPlayerBySession(session, battle);
-                battle.HandleSurrender(player); 
+                battle.HandleSurrender(player);
             };
+            _packetHandlers[SessionMessageID.PlayCardWithTarget] = OnUseCardWithTarget;
         }
 
         public void Work()
